@@ -1,38 +1,46 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
+
+// Store in system temp folder to ensure write permissions on hosted servers
+const DATA_FILE = path.join(os.tmpdir(), 'ringtones_data.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Helper to load ringtones from JSON file
 function loadRingtones() {
-  if (!fs.existsSync(DATA_FILE)) {
-    const initialData = [
-      { id: 1, name: "Synthwave Pulse", url: "https://www.zedge.net/ringtones", used: true, dateUsed: "2026-08-30" },
-      { id: 2, name: "Acoustic Chill", url: "https://www.zedge.net/ringtones", used: false, dateUsed: "" }
-    ];
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
-    return initialData;
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      const initialData = [
+        { id: 1, name: "Synthwave Pulse", url: "https://www.zedge.net/ringtones", used: true, dateUsed: "2026-08-30" },
+        { id: 2, name: "Acoustic Chill", url: "https://www.zedge.net/ringtones", used: false, dateUsed: "" }
+      ];
+      fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
+      return initialData;
+    }
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (err) {
+    console.error("Error reading storage file:", err);
+    return [];
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-// Helper to save ringtones to JSON file
 function saveRingtones(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error("Error writing storage file:", err);
+  }
 }
 
-// API: Get all ringtones
 app.get('/api/ringtones', (req, res) => {
   res.json(loadRingtones());
 });
 
-// API: Add new ringtone
 app.post('/api/ringtones', (req, res) => {
   const ringtones = loadRingtones();
   const newEntry = {
@@ -47,7 +55,6 @@ app.post('/api/ringtones', (req, res) => {
   res.json({ success: true, item: newEntry });
 });
 
-// API: Update an existing ringtone
 app.put('/api/ringtones/:id', (req, res) => {
   const id = Number(req.params.id);
   let ringtones = loadRingtones();
@@ -55,10 +62,10 @@ app.put('/api/ringtones/:id', (req, res) => {
     if (r.id === id) {
       return {
         id: r.id,
-        name: req.body.name ?? r.name,
-        url: req.body.url ?? r.url,
-        used: req.body.used ?? r.used,
-        dateUsed: req.body.dateUsed ?? r.dateUsed
+        name: req.body.name !== undefined ? req.body.name : r.name,
+        url: req.body.url !== undefined ? req.body.url : r.url,
+        used: req.body.used !== undefined ? req.body.used : r.used,
+        dateUsed: req.body.dateUsed !== undefined ? req.body.dateUsed : r.dateUsed
       };
     }
     return r;
@@ -67,7 +74,6 @@ app.put('/api/ringtones/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// API: Delete a ringtone
 app.delete('/api/ringtones/:id', (req, res) => {
   const id = Number(req.params.id);
   const ringtones = loadRingtones().filter(r => r.id !== id);
@@ -75,7 +81,6 @@ app.delete('/api/ringtones/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// UI Page
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -144,9 +149,9 @@ app.get('/', (req, res) => {
           data.forEach(item => {
             const row = document.createElement('tr');
             row.innerHTML = \`
-              <td><input type="text" value="\${item.name}" onchange="updateItem(\${item.id}, 'name', this.value)"></td>
+              <td><input type="text" value="\${item.name}" onblur="updateItem(\${item.id}, 'name', this.value)"></td>
               <td>
-                <input type="text" value="\${item.url}" onchange="updateItem(\${item.id}, 'url', this.value)" style="width: 70%;">
+                <input type="text" value="\${item.url}" onblur="updateItem(\${item.id}, 'url', this.value)" style="width: 70%;">
                 <a href="\${item.url}" target="_blank" class="external">🔗</a>
               </td>
               <td>
