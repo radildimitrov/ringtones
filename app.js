@@ -23,7 +23,9 @@ function getRingtones() {
     return [];
   }
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const items = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    // Sort newest first (highest ID timestamp at the top)
+    return items.sort((a, b) => b.id - a.id);
   } catch (e) {
     return [];
   }
@@ -44,12 +46,11 @@ app.post('/api/add', (req, res) => {
       id: Date.now(),
       name: req.body.name || "Untitled Ringtone",
       url: req.body.url || "https://www.zedge.net/ringtones",
-      used: req.body.used === true || req.body.used === "true",
       dateUsed: req.body.dateUsed || ""
     };
     ringtones.push(newItem);
     saveRingtones(ringtones);
-    res.json({ success: true, ringtones });
+    res.json({ success: true, ringtones: getRingtones() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -66,7 +67,7 @@ app.post('/api/update', (req, res) => {
       return item;
     });
     saveRingtones(ringtones);
-    res.json({ success: true, ringtones });
+    res.json({ success: true, ringtones: getRingtones() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -77,7 +78,7 @@ app.post('/api/delete', (req, res) => {
     const id = Number(req.body.id);
     const ringtones = getRingtones().filter(item => item.id !== id);
     saveRingtones(ringtones);
-    res.json({ success: true, ringtones });
+    res.json({ success: true, ringtones: getRingtones() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,15 +98,20 @@ app.get('/', (req, res) => {
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
         th { background-color: #334155; color: #94a3b8; }
-        input[type="text"], input[type="date"], select {
-          background: #0f172a; border: 1px solid #475569; color: #fff; padding: 8px 10px; border-radius: 4px; width: 90%;
+        input[type="text"], input[type="date"] {
+          background: #0f172a; border: 1px solid #475569; color: #fff; padding: 8px 10px; border-radius: 4px; width: 85%;
         }
         button { background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0369a1; }
         button.delete { background: #ef4444; }
         button.delete:hover { background: #dc2626; }
-        .add-form { display: grid; grid-template-columns: 2fr 3fr 1fr 1fr auto; gap: 10px; align-items: center; }
+        .add-form { display: grid; grid-template-columns: 2fr 3fr 1.5fr auto; gap: 10px; align-items: center; }
         a.external { color: #38bdf8; text-decoration: none; margin-left: 5px; font-size: 0.9em; }
+        
+        /* Highlight row styling for duplicate entries */
+        tr.duplicate { background-color: #451a03 !important; }
+        tr.duplicate td { border-bottom: 1px solid #78350f; }
+        .dup-tag { background: #b45309; color: #fef3c7; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold; white-space: nowrap; }
       </style>
     </head>
     <body>
@@ -116,10 +122,6 @@ app.get('/', (req, res) => {
         <div class="add-form">
           <input type="text" id="newName" placeholder="Ringtone Name">
           <input type="text" id="newUrl" placeholder="Zedge Link (https://...)">
-          <select id="newUsed">
-            <option value="false">⏳ In Queue</option>
-            <option value="true">✅ Used</option>
-          </select>
           <input type="date" id="newDate">
           <button onclick="addRingtone()">Add</button>
         </div>
@@ -132,7 +134,6 @@ app.get('/', (req, res) => {
             <tr>
               <th>Name</th>
               <th>Zedge Link</th>
-              <th>Status</th>
               <th>Date Used</th>
               <th>Actions</th>
             </tr>
@@ -144,7 +145,6 @@ app.get('/', (req, res) => {
       <script>
         async function fetchRingtones() {
           try {
-            // Cache-busting timestamp query parameter
             const res = await fetch('/api/list?_t=' + Date.now(), { cache: 'no-store' });
             const data = await res.json();
             renderTable(data);
@@ -158,23 +158,36 @@ app.get('/', (req, res) => {
           tbody.innerHTML = '';
 
           if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">No ringtones saved yet. Add one above!</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No ringtones saved yet. Add one above!</td></tr>';
             return;
           }
 
+          // Count duplicate ringtone names (case-insensitive)
+          const nameCounts = {};
+          data.forEach(item => {
+            const key = (item.name || '').trim().toLowerCase();
+            if (key) {
+              nameCounts[key] = (nameCounts[key] || 0) + 1;
+            }
+          });
+
           data.forEach(item => {
             const row = document.createElement('tr');
+            const key = (item.name || '').trim().toLowerCase();
+            const isDuplicate = key && nameCounts[key] > 1;
+
+            if (isDuplicate) {
+              row.classList.add('duplicate');
+            }
+
             row.innerHTML = \`
-              <td><input type="text" value="\${item.name}" onblur="updateItem(\${item.id}, 'name', this.value)"></td>
+              <td>
+                <input type="text" value="\${item.name}" onblur="updateItem(\${item.id}, 'name', this.value)">
+                \${isDuplicate ? '<span class="dup-tag">⚠️ Duplicate</span>' : ''}
+              </td>
               <td>
                 <input type="text" value="\${item.url}" onblur="updateItem(\${item.id}, 'url', this.value)" style="width: 70%;">
                 <a href="\${item.url}" target="_blank" class="external">🔗</a>
-              </td>
-              <td>
-                <select onchange="updateItem(\${item.id}, 'used', this.value === 'true')">
-                  <option value="false" \${!item.used ? 'selected' : ''}>⏳ In Queue</option>
-                  <option value="true" \${item.used ? 'selected' : ''}>✅ Used</option>
-                </select>
               </td>
               <td><input type="date" value="\${item.dateUsed || ''}" onchange="updateItem(\${item.id}, 'dateUsed', this.value)"></td>
               <td><button class="delete" onclick="deleteItem(\${item.id})">Delete</button></td>
@@ -186,14 +199,13 @@ app.get('/', (req, res) => {
         async function addRingtone() {
           const name = document.getElementById('newName').value;
           const url = document.getElementById('newUrl').value;
-          const used = document.getElementById('newUsed').value;
           const dateUsed = document.getElementById('newDate').value;
 
           try {
             const res = await fetch('/api/add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, url, used, dateUsed })
+              body: JSON.stringify({ name, url, dateUsed })
             });
             const result = await res.json();
             if (result.error) throw new Error(result.error);
@@ -216,6 +228,7 @@ app.get('/', (req, res) => {
             });
             const result = await res.json();
             if (result.error) throw new Error(result.error);
+            renderTable(result.ringtones);
           } catch (err) {
             alert('Error updating item: ' + err.message);
           }
