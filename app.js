@@ -9,14 +9,18 @@ const DATA_FILE = path.join(__dirname, 'ringtones_db.json');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Disable browser and server-side HTTP caching for all API routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 function getRingtones() {
   if (!fs.existsSync(DATA_FILE)) {
-    const initial = [
-      { id: 1, name: "Synthwave Pulse", url: "https://www.zedge.net/ringtones", used: true, dateUsed: "2026-08-30" },
-      { id: 2, name: "Acoustic Chill", url: "https://www.zedge.net/ringtones", used: false, dateUsed: "" }
-    ];
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
-    return initial;
+    fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2));
+    return [];
   }
   try {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -29,7 +33,6 @@ function saveRingtones(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// All actions use standard GET/POST to avoid host server method blocking
 app.get('/api/list', (req, res) => {
   res.json(getRingtones());
 });
@@ -141,7 +144,8 @@ app.get('/', (req, res) => {
       <script>
         async function fetchRingtones() {
           try {
-            const res = await fetch('/api/list');
+            // Cache-busting timestamp query parameter
+            const res = await fetch('/api/list?_t=' + Date.now(), { cache: 'no-store' });
             const data = await res.json();
             renderTable(data);
           } catch (err) {
@@ -152,6 +156,11 @@ app.get('/', (req, res) => {
         function renderTable(data) {
           const tbody = document.getElementById('ringtoneTable');
           tbody.innerHTML = '';
+
+          if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">No ringtones saved yet. Add one above!</td></tr>';
+            return;
+          }
 
           data.forEach(item => {
             const row = document.createElement('tr');
