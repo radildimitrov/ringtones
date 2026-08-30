@@ -1,84 +1,83 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Store in system temp folder to ensure write permissions on hosted servers
-const DATA_FILE = path.join(os.tmpdir(), 'ringtones_data.json');
+const DATA_FILE = path.join(__dirname, 'ringtones_db.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-function loadRingtones() {
+function getRingtones() {
+  if (!fs.existsSync(DATA_FILE)) {
+    const initial = [
+      { id: 1, name: "Synthwave Pulse", url: "https://www.zedge.net/ringtones", used: true, dateUsed: "2026-08-30" },
+      { id: 2, name: "Acoustic Chill", url: "https://www.zedge.net/ringtones", used: false, dateUsed: "" }
+    ];
+    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
+    return initial;
+  }
   try {
-    if (!fs.existsSync(DATA_FILE)) {
-      const initialData = [
-        { id: 1, name: "Synthwave Pulse", url: "https://www.zedge.net/ringtones", used: true, dateUsed: "2026-08-30" },
-        { id: 2, name: "Acoustic Chill", url: "https://www.zedge.net/ringtones", used: false, dateUsed: "" }
-      ];
-      fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
-      return initialData;
-    }
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (err) {
-    console.error("Error reading storage file:", err);
+  } catch (e) {
     return [];
   }
 }
 
 function saveRingtones(data) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error("Error writing storage file:", err);
-  }
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-app.get('/api/ringtones', (req, res) => {
-  res.json(loadRingtones());
+// All actions use standard GET/POST to avoid host server method blocking
+app.get('/api/list', (req, res) => {
+  res.json(getRingtones());
 });
 
-app.post('/api/ringtones', (req, res) => {
-  const ringtones = loadRingtones();
-  const newEntry = {
-    id: Date.now(),
-    name: req.body.name || "Untitled Ringtone",
-    url: req.body.url || "https://www.zedge.net/ringtones",
-    used: req.body.used === true || req.body.used === "true",
-    dateUsed: req.body.dateUsed || ""
-  };
-  ringtones.push(newEntry);
-  saveRingtones(ringtones);
-  res.json({ success: true, item: newEntry });
+app.post('/api/add', (req, res) => {
+  try {
+    const ringtones = getRingtones();
+    const newItem = {
+      id: Date.now(),
+      name: req.body.name || "Untitled Ringtone",
+      url: req.body.url || "https://www.zedge.net/ringtones",
+      used: req.body.used === true || req.body.used === "true",
+      dateUsed: req.body.dateUsed || ""
+    };
+    ringtones.push(newItem);
+    saveRingtones(ringtones);
+    res.json({ success: true, ringtones });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.put('/api/ringtones/:id', (req, res) => {
-  const id = Number(req.params.id);
-  let ringtones = loadRingtones();
-  ringtones = ringtones.map(r => {
-    if (r.id === id) {
-      return {
-        id: r.id,
-        name: req.body.name !== undefined ? req.body.name : r.name,
-        url: req.body.url !== undefined ? req.body.url : r.url,
-        used: req.body.used !== undefined ? req.body.used : r.used,
-        dateUsed: req.body.dateUsed !== undefined ? req.body.dateUsed : r.dateUsed
-      };
-    }
-    return r;
-  });
-  saveRingtones(ringtones);
-  res.json({ success: true });
+app.post('/api/update', (req, res) => {
+  try {
+    const { id, field, value } = req.body;
+    let ringtones = getRingtones();
+    ringtones = ringtones.map(item => {
+      if (item.id === Number(id)) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    });
+    saveRingtones(ringtones);
+    res.json({ success: true, ringtones });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.delete('/api/ringtones/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const ringtones = loadRingtones().filter(r => r.id !== id);
-  saveRingtones(ringtones);
-  res.json({ success: true });
+app.post('/api/delete', (req, res) => {
+  try {
+    const id = Number(req.body.id);
+    const ringtones = getRingtones().filter(item => item.id !== id);
+    saveRingtones(ringtones);
+    res.json({ success: true, ringtones });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/', (req, res) => {
@@ -141,8 +140,16 @@ app.get('/', (req, res) => {
 
       <script>
         async function fetchRingtones() {
-          const res = await fetch('/api/ringtones');
-          const data = await res.json();
+          try {
+            const res = await fetch('/api/list');
+            const data = await res.json();
+            renderTable(data);
+          } catch (err) {
+            alert('Failed to load ringtones: ' + err.message);
+          }
+        }
+
+        function renderTable(data) {
           const tbody = document.getElementById('ringtoneTable');
           tbody.innerHTML = '';
 
@@ -173,30 +180,52 @@ app.get('/', (req, res) => {
           const used = document.getElementById('newUsed').value;
           const dateUsed = document.getElementById('newDate').value;
 
-          await fetch('/api/ringtones', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, url, used, dateUsed })
-          });
+          try {
+            const res = await fetch('/api/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, url, used, dateUsed })
+            });
+            const result = await res.json();
+            if (result.error) throw new Error(result.error);
 
-          document.getElementById('newName').value = '';
-          document.getElementById('newUrl').value = '';
-          document.getElementById('newDate').value = '';
-          fetchRingtones();
+            document.getElementById('newName').value = '';
+            document.getElementById('newUrl').value = '';
+            document.getElementById('newDate').value = '';
+            renderTable(result.ringtones);
+          } catch (err) {
+            alert('Error adding ringtone: ' + err.message);
+          }
         }
 
         async function updateItem(id, field, value) {
-          await fetch('/api/ringtones/' + id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ [field]: value })
-          });
+          try {
+            const res = await fetch('/api/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, field, value })
+            });
+            const result = await res.json();
+            if (result.error) throw new Error(result.error);
+          } catch (err) {
+            alert('Error updating item: ' + err.message);
+          }
         }
 
         async function deleteItem(id) {
-          if (confirm('Delete this ringtone?')) {
-            await fetch('/api/ringtones/' + id, { method: 'DELETE' });
-            fetchRingtones();
+          if (!confirm('Delete this ringtone?')) return;
+
+          try {
+            const res = await fetch('/api/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id })
+            });
+            const result = await res.json();
+            if (result.error) throw new Error(result.error);
+            renderTable(result.ringtones);
+          } catch (err) {
+            alert('Error deleting item: ' + err.message);
           }
         }
 
