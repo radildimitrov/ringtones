@@ -44,9 +44,7 @@ app.post('/api/add', (req, res) => {
     const ringtones = getRingtones();
     const newItem = {
       id: Date.now(),
-      name: req.body.name || "Untitled Ringtone",
-      url: req.body.url || "https://www.zedge.net/ringtones",
-      dateUsed: req.body.dateUsed || ""
+      name: req.body.name || "Untitled Ringtone"
     };
     ringtones.push(newItem);
     saveRingtones(ringtones);
@@ -92,21 +90,20 @@ app.get('/', (req, res) => {
       <meta charset="UTF-8">
       <title>Daily Ringtone Tracker</title>
       <style>
-        body { font-family: system-ui, -apple-system, sans-serif; padding: 2rem; background: #0f172a; color: #f8fafc; max-width: 1000px; margin: 0 auto; }
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 2rem; background: #0f172a; color: #f8fafc; max-width: 800px; margin: 0 auto; }
         h1 { margin-bottom: 1.5rem; }
         .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; border: 1px solid #334155; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
         th { background-color: #334155; color: #94a3b8; }
-        input[type="text"], input[type="date"] {
-          background: #0f172a; border: 1px solid #475569; color: #fff; padding: 8px 10px; border-radius: 4px; width: 85%;
+        input[type="text"] {
+          background: #0f172a; border: 1px solid #475569; color: #fff; padding: 8px 10px; border-radius: 4px; width: 70%;
         }
         button { background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0369a1; }
         button.delete { background: #ef4444; }
         button.delete:hover { background: #dc2626; }
-        .add-form { display: grid; grid-template-columns: 2fr 3fr 1.5fr auto; gap: 10px; align-items: center; }
-        a.external { color: #38bdf8; text-decoration: none; margin-left: 5px; font-size: 0.9em; }
+        .add-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
         
         /* Highlight row styling for duplicate entries */
         tr.duplicate { background-color: #451a03 !important; }
@@ -121,8 +118,6 @@ app.get('/', (req, res) => {
         <h3>Add New Ringtone</h3>
         <div class="add-form">
           <input type="text" id="newName" placeholder="Ringtone Name">
-          <input type="text" id="newUrl" placeholder="Zedge Link (https://...)">
-          <input type="date" id="newDate">
           <button onclick="addRingtone()">Add</button>
         </div>
       </div>
@@ -133,9 +128,7 @@ app.get('/', (req, res) => {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Zedge Link</th>
-              <th>Date Used</th>
-              <th>Actions</th>
+              <th style="width: 100px;">Actions</th>
             </tr>
           </thead>
           <tbody id="ringtoneTable"></tbody>
@@ -158,7 +151,7 @@ app.get('/', (req, res) => {
           tbody.innerHTML = '';
 
           if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No ringtones saved yet. Add one above!</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#94a3b8;">No ringtones saved yet. Add one above!</td></tr>';
             return;
           }
 
@@ -185,11 +178,6 @@ app.get('/', (req, res) => {
                 <input type="text" value="\${item.name}" onblur="updateItem(\${item.id}, 'name', this.value)">
                 \${isDuplicate ? '<span class="dup-tag">⚠️ Duplicate</span>' : ''}
               </td>
-              <td>
-                <input type="text" value="\${item.url}" onblur="updateItem(\${item.id}, 'url', this.value)" style="width: 70%;">
-                <a href="\${item.url}" target="_blank" class="external">🔗</a>
-              </td>
-              <td><input type="date" value="\${item.dateUsed || ''}" onchange="updateItem(\${item.id}, 'dateUsed', this.value)"></td>
               <td><button class="delete" onclick="deleteItem(\${item.id})">Delete</button></td>
             \`;
             tbody.appendChild(row);
@@ -198,21 +186,17 @@ app.get('/', (req, res) => {
 
         async function addRingtone() {
           const name = document.getElementById('newName').value;
-          const url = document.getElementById('newUrl').value;
-          const dateUsed = document.getElementById('newDate').value;
 
           try {
             const res = await fetch('/api/add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, url, dateUsed })
+              body: JSON.stringify({ name })
             });
             const result = await res.json();
             if (result.error) throw new Error(result.error);
 
             document.getElementById('newName').value = '';
-            document.getElementById('newUrl').value = '';
-            document.getElementById('newDate').value = '';
             renderTable(result.ringtones);
           } catch (err) {
             alert('Error adding ringtone: ' + err.message);
